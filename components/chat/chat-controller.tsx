@@ -6,6 +6,7 @@ import Message, { MessageType } from './message';
 import ChatInput from './chat-input';
 import { extractSearchParameters, generateAIResponse } from '@/lib/openai';
 import { searchApartments } from '@/lib/apartments';
+import { generateZillowUrl } from '@/lib/zillow';
 import { Card } from '@/components/ui/card';
 
 // Initial welcome message
@@ -29,6 +30,7 @@ const ParameterDisplay = ({
     location?: string; 
     bedrooms?: number; 
     budget?: number; 
+    zillowUrl?: string;
     missingParameters?: string[];
   };
   title?: string;
@@ -58,6 +60,19 @@ const ParameterDisplay = ({
             {params.budget !== undefined ? `$${params.budget}` : "Not specified"}
           </span>
         </div>
+        {params.zillowUrl && (
+          <div className="flex items-center mt-2">
+            <span className="font-medium mr-2 text-gray-700 dark:text-gray-300">Zillow:</span>
+            <a 
+              href={params.zillowUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[200px]"
+            >
+              View on Zillow
+            </a>
+          </div>
+        )}
         {params.missingParameters && params.missingParameters.length > 0 && (
           <div className="flex items-center mt-1 text-amber-600 dark:text-amber-400">
             <span className="font-medium mr-2">Missing:</span>
@@ -76,6 +91,7 @@ export default function ChatController() {
     location?: string;
     bedrooms?: number;
     budget?: number;
+    zillowUrl?: string;
     hasAllParameters: boolean;
     searchPerformed: boolean;
   }>({
@@ -127,6 +143,9 @@ export default function ChatController() {
       
       setMessages(prev => [...prev, userMessage]);
       setIsLoading(true);
+      
+      // Check if this is an explicit search command
+      const isSearchCommand = /^(search|find|show|get|give me)\s+apartments/i.test(content.trim());
       
       // REASONING PHASE - Step 1: Understand user intent
       console.log("ReAct - Reasoning: Analyzing user message to understand intent");
@@ -220,26 +239,27 @@ export default function ChatController() {
       // Check if we have all parameters needed
       const hasAllParams = missingParams.length === 0;
       
-      // REASONING PHASE - Step 3: Determine next action
-      if (hasAllParams) {
-        console.log("ReAct - Reasoning: All parameters collected, can perform search");
-      } else {
-        console.log(`ReAct - Reasoning: Missing parameters: ${missingParams.join(', ')}, need to ask user`);
-      }
+      // Generate Zillow URL
+      const zillowUrl = generateZillowUrl(
+        updatedLocation,
+        updatedBedrooms,
+        updatedBudget
+      );
       
       // Update search state with what we know so far
       setSearchState({
         location: updatedLocation,
         bedrooms: updatedBedrooms,
         budget: updatedBudget,
+        zillowUrl: hasAllParams ? zillowUrl : undefined,
         hasAllParameters: hasAllParams,
         searchPerformed: false
       });
       
-      // ACTING PHASE: Either ask for missing info or perform the search
-      if (hasAllParams) {
-        console.log("ReAct - Acting: Performing apartment search");
-        // All parameters are available, let's search
+      // Only perform a search if explicitly requested
+      if (isSearchCommand && hasAllParams) {
+        console.log("ReAct - Acting: Performing apartment search based on explicit request");
+        // All parameters are available and search was requested, let's search
         const apartments = searchApartments({
           location: updatedLocation,
           bedrooms: updatedBedrooms,
@@ -258,6 +278,11 @@ export default function ChatController() {
             apartmentResults += `${index + 1}. ${apt.title} - ${apt.location} - ${apt.bedrooms === 0 ? 'Studio' : `${apt.bedrooms} bedroom`} - $${apt.rent}/month - ${apt.description}\n`;
           });
           
+          // Add Zillow URL if available
+          if (zillowUrl) {
+            apartmentResults += `\nYou can also view similar listings on Zillow: ${zillowUrl}`;
+          }
+          
           // Get all previous messages
           const conversationHistory = formatMessagesForOpenAI(messages);
           conversationHistory.push({
@@ -268,7 +293,7 @@ export default function ChatController() {
           // Add a system message with the search results for the AI to reference
           conversationHistory.push({
             role: 'system' as OpenAIMessageRole,
-            content: `You are presenting apartment search results to the user. Here are the results: ${apartmentResults}\n\nPresent these results in a friendly, conversational way. Format them nicely with emojis, and ask if they'd like to modify their search criteria.`
+            content: `You are presenting apartment search results to the user. Here are the results: ${apartmentResults}\n\nPresent these results in a friendly, conversational way. Format them nicely with emojis, and ask if they'd like to modify their search criteria. If there's a Zillow URL, mention it as an option to see more listings.`
           });
           
           // Generate AI response
@@ -282,9 +307,18 @@ export default function ChatController() {
             content
           });
           
+          let systemMessage = `The user is looking for ${updatedBedrooms === 0 ? 'a studio' : `a ${updatedBedrooms} bedroom apartment`} in ${updatedLocation} with a budget of $${updatedBudget}, but no matching apartments were found.`;
+          
+          // Add Zillow URL if available
+          if (zillowUrl) {
+            systemMessage += ` However, they can check Zillow for similar listings: ${zillowUrl}`;
+          }
+          
+          systemMessage += ` Inform them gently and ask if they'd like to try different criteria.`;
+          
           conversationHistory.push({
             role: 'system' as OpenAIMessageRole,
-            content: `The user is looking for ${updatedBedrooms === 0 ? 'a studio' : `a ${updatedBedrooms} bedroom apartment`} in ${updatedLocation} with a budget of $${updatedBudget}, but no matching apartments were found. Inform them gently and ask if they'd like to try different criteria.`
+            content: systemMessage
           });
           
           responseContent = await generateAIResponse(conversationHistory);
@@ -303,47 +337,71 @@ export default function ChatController() {
         // Mark search as performed
         setSearchState(prev => ({
           ...prev,
+          zillowUrl,
           searchPerformed: true
         }));
-      } else {
-        console.log(`ReAct - Acting: Asking user for missing parameters: ${missingParams.join(', ')}`);
-        // Some parameters are missing, ask for them
-        const missingParamsText = missingParams.join(', ');
+      } else if (isSearchCommand && !hasAllParams) {
+        // User requested a search but we're missing parameters
+        console.log(`ReAct - Acting: Search requested but missing parameters: ${missingParams.join(', ')}`);
         
-        // Build context for the AI about what we already know and what's missing
-        let contextForAI = `The user is looking for an apartment. `;
-        
-        if (updatedLocation) {
-          contextForAI += `They want to live in ${updatedLocation}. `;
-        }
-        
-        if (updatedBedrooms !== undefined) {
-          contextForAI += `They need ${updatedBedrooms === 0 ? 'a studio' : `${updatedBedrooms} bedroom${updatedBedrooms !== 1 ? 's' : ''}`}. `;
-        }
-        
-        if (updatedBudget !== undefined) {
-          contextForAI += `Their budget is $${updatedBudget}. `;
-        }
-        
-        contextForAI += `I still need to ask for their ${missingParamsText}. Be conversational and friendly.`;
-        
-        // Get all previous messages for context
         const conversationHistory = formatMessagesForOpenAI(messages);
         conversationHistory.push({
           role: 'user' as OpenAIMessageRole,
           content
         });
         
-        // Add system message with context about what's missing
+        conversationHistory.push({
+          role: 'system' as OpenAIMessageRole,
+          content: `The user wants to search for apartments, but I'm missing some information: ${missingParams.join(', ')}. Ask for this information in a friendly way.`
+        });
+        
+        const responseContent = await generateAIResponse(conversationHistory);
+        
+        const aiResponse: MessageType = {
+          id: uuidv4(),
+          content: responseContent,
+          role: 'assistant',
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, aiResponse]);
+      } else if (!extractedParams.isGreeting) {
+        // Not a search command, not a greeting, just acknowledge the parameters
+        console.log("ReAct - Acting: Acknowledging parameters without searching");
+        
+        const conversationHistory = formatMessagesForOpenAI(messages);
+        conversationHistory.push({
+          role: 'user' as OpenAIMessageRole,
+          content
+        });
+        
+        let contextForAI = "The user has provided some apartment search parameters. ";
+        
+        if (updatedLocation) {
+          contextForAI += `Location: ${updatedLocation}. `;
+        }
+        
+        if (updatedBedrooms !== undefined) {
+          contextForAI += `Bedrooms: ${updatedBedrooms === 0 ? 'Studio' : updatedBedrooms}. `;
+        }
+        
+        if (updatedBudget !== undefined) {
+          contextForAI += `Budget: $${updatedBudget}. `;
+        }
+        
+        if (missingParams.length > 0) {
+          contextForAI += `Still missing: ${missingParams.join(', ')}. `;
+        }
+        
+        contextForAI += "Acknowledge the parameters they've provided. If all parameters are present, ask if they'd like to search for apartments. If parameters are missing, ask for the missing information.";
+        
         conversationHistory.push({
           role: 'system' as OpenAIMessageRole,
           content: contextForAI
         });
         
-        // Generate AI response asking for missing information
         const responseContent = await generateAIResponse(conversationHistory);
         
-        // Add AI response to chat
         const aiResponse: MessageType = {
           id: uuidv4(),
           content: responseContent,
@@ -416,6 +474,7 @@ export default function ChatController() {
                 location: searchState.location,
                 bedrooms: searchState.bedrooms,
                 budget: searchState.budget,
+                zillowUrl: searchState.zillowUrl,
                 missingParameters: !searchState.hasAllParameters ? 
                   [
                     !searchState.location ? 'location' : null,

@@ -1,5 +1,4 @@
 import React, { useState, FormEvent } from 'react';
-import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
 interface ChatInputProps {
@@ -35,13 +34,6 @@ export default function ChatInput({ onSendMessage, isLoading }: ChatInputProps) 
             }
           }}
         />
-        <Button 
-          type="submit" 
-          disabled={isLoading || !message.trim()}
-          className="h-12"
-        >
-          {isLoading ? 'Thinking...' : 'Send'}
-        </Button>
       </div>
       <p className="text-xs text-neutral-500 mt-2">
         Press Enter to send, Shift+Enter for a new line
