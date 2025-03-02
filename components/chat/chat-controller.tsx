@@ -7,7 +7,7 @@ import ChatInput from './chat-input';
 import { extractSearchParameters, generateAIResponse } from '@/lib/openai';
 import { searchApartments } from '@/lib/apartments';
 import { generateZillowUrl } from '@/lib/zillow';
-import { Card } from '@/components/ui/card';
+import PropertyList from '@/components/property/property-list';
 
 // Initial welcome message
 const WELCOME_MESSAGE: MessageType = {
@@ -20,75 +20,13 @@ const WELCOME_MESSAGE: MessageType = {
 // Define a type for OpenAI message roles
 type OpenAIMessageRole = 'user' | 'assistant' | 'system';
 
-// Component to display extracted parameters
-const ParameterDisplay = ({ 
-  params, 
-  title = "Extracted Parameters", 
-  visible = true
-}: { 
-  params: { 
-    location?: string; 
-    bedrooms?: number; 
-    budget?: number; 
-    zillowUrl?: string;
-    missingParameters?: string[];
-  };
-  title?: string;
-  visible?: boolean;
-}) => {
-  if (!visible) return null;
-  
-  return (
-    <div className="my-4 px-4 py-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
-      <h3 className="text-sm font-semibold mb-2 text-blue-700 dark:text-blue-300">{title}</h3>
-      <div className="grid grid-cols-1 gap-1 text-sm">
-        <div className="flex items-center">
-          <span className="font-medium mr-2 text-gray-700 dark:text-gray-300">Location:</span>
-          <span className="text-gray-900 dark:text-gray-100">{params.location || "Not specified"}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="font-medium mr-2 text-gray-700 dark:text-gray-300">Bedrooms:</span>
-          <span className="text-gray-900 dark:text-gray-100">
-            {params.bedrooms !== undefined ? 
-              (params.bedrooms === 0 ? 'Studio' : params.bedrooms) : 
-              "Not specified"}
-          </span>
-        </div>
-        <div className="flex items-center">
-          <span className="font-medium mr-2 text-gray-700 dark:text-gray-300">Budget:</span>
-          <span className="text-gray-900 dark:text-gray-100">
-            {params.budget !== undefined ? `$${params.budget}` : "Not specified"}
-          </span>
-        </div>
-        {params.zillowUrl && (
-          <div className="flex items-center mt-2">
-            <span className="font-medium mr-2 text-gray-700 dark:text-gray-300">Zillow:</span>
-            <a 
-              href={params.zillowUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="text-blue-600 dark:text-blue-400 hover:underline truncate max-w-[200px]"
-            >
-              View on Zillow
-            </a>
-          </div>
-        )}
-        {params.missingParameters && params.missingParameters.length > 0 && (
-          <div className="flex items-center mt-1 text-amber-600 dark:text-amber-400">
-            <span className="font-medium mr-2">Missing:</span>
-            <span>{params.missingParameters.join(', ')}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 export default function ChatController() {
   const [messages, setMessages] = useState<MessageType[]>([WELCOME_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchState, setSearchState] = useState<{
     location?: string;
+    state?: string;
+    zipcode?: string;
     bedrooms?: number;
     budget?: number;
     zillowUrl?: string;
@@ -102,14 +40,16 @@ export default function ChatController() {
   // New state to track the latest extracted parameters
   const [extractedParams, setExtractedParams] = useState<{
     location?: string;
+    state?: string;
+    zipcode?: string;
     bedrooms?: number;
     budget?: number;
     missingParameters?: string[];
     isGreeting?: boolean;
   }>({});
   
-  // State to control parameter display visibility
-  const [showParameters, setShowParameters] = useState(false);
+  // New state to control the property list visibility
+  const [showPropertyList, setShowPropertyList] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -145,7 +85,8 @@ export default function ChatController() {
       setIsLoading(true);
       
       // Check if this is an explicit search command
-      const isSearchCommand = /^(search|find|show|get|give me)\s+apartments/i.test(content.trim());
+      const isSearchCommand = /^(search|find|show|get|give me|display)\s+(apartments|properties|listings|rentals|homes)/i.test(content.trim()) ||
+                             /^(search|find|show|get|give me|display)\s+zillow/i.test(content.trim());
       
       // REASONING PHASE - Step 1: Understand user intent
       console.log("ReAct - Reasoning: Analyzing user message to understand intent");
@@ -153,7 +94,6 @@ export default function ChatController() {
       
       // Update the extracted parameters state and show the display
       setExtractedParams(extractedParams);
-      setShowParameters(true);
       
       // Add the extracted parameters as a system message in the chat
       if (!extractedParams.isGreeting && Object.keys(extractedParams).some(key => {
@@ -164,6 +104,16 @@ export default function ChatController() {
         
         if (extractedParams.location) {
           paramMessage += `📍 **Location**: ${extractedParams.location}\n`;
+        }
+        
+        if (extractedParams.state) {
+          paramMessage += `🏙️ **State**: ${extractedParams.state}\n`;
+        }
+        
+        if (extractedParams.zipcode) {
+          // Check if zipcode was explicitly mentioned in the user's message
+          const zipcodeExplicitlyMentioned = content.includes(extractedParams.zipcode);
+          paramMessage += `📮 **ZIP Code**: ${extractedParams.zipcode}${zipcodeExplicitlyMentioned ? '' : ' (inferred)'}\n`;
         }
         
         if (extractedParams.bedrooms !== undefined) {
@@ -223,6 +173,8 @@ export default function ChatController() {
       
       // Update with any newly extracted parameters
       const updatedLocation = extractedParams.location || searchState.location;
+      const updatedState = extractedParams.state || searchState.state;
+      const updatedZipcode = extractedParams.zipcode || searchState.zipcode;
       const updatedBedrooms = extractedParams.bedrooms !== undefined 
         ? extractedParams.bedrooms 
         : searchState.bedrooms;
@@ -230,9 +182,15 @@ export default function ChatController() {
         ? extractedParams.budget 
         : searchState.budget;
       
+      // Debug log for zipcode
+      console.log(`Extracted zipcode: ${extractedParams.zipcode}`);
+      console.log(`Previous zipcode: ${searchState.zipcode}`);
+      console.log(`Updated zipcode: ${updatedZipcode}`);
+      
       // Determine what's missing
       const missingParams = [];
       if (!updatedLocation) missingParams.push('location');
+      if (!updatedState) missingParams.push('state');
       if (updatedBedrooms === undefined) missingParams.push('number of bedrooms');
       if (updatedBudget === undefined) missingParams.push('budget');
       
@@ -240,15 +198,21 @@ export default function ChatController() {
       const hasAllParams = missingParams.length === 0;
       
       // Generate Zillow URL
+      console.log(`Generating Zillow URL with zipcode: ${updatedZipcode}`);
       const zillowUrl = generateZillowUrl(
         updatedLocation,
+        updatedState,
+        updatedZipcode,
         updatedBedrooms,
         updatedBudget
       );
+      console.log(`Generated Zillow URL: ${zillowUrl}`);
       
       // Update search state with what we know so far
       setSearchState({
         location: updatedLocation,
+        state: updatedState,
+        zipcode: updatedZipcode,
         bedrooms: updatedBedrooms,
         budget: updatedBudget,
         zillowUrl: hasAllParams ? zillowUrl : undefined,
@@ -256,12 +220,38 @@ export default function ChatController() {
         searchPerformed: false
       });
       
+      // Check if we should display property listings
+      if (extractedParams.location) {
+        // Show property list if:
+        // 1. It's an explicit search command OR
+        // 2. All required parameters are present
+        const hasAllRequiredParams = 
+          extractedParams.location && 
+          (extractedParams.missingParameters === undefined || 
+           extractedParams.missingParameters.length === 0);
+           
+        if (isSearchCommand || hasAllRequiredParams) {
+          setShowPropertyList(true);
+          
+          // Add a message indicating that we're showing properties
+          const searchResponseMessage: MessageType = {
+            id: uuidv4(),
+            content: `📊 **Showing Property Listings**\n\nI've found properties in ${extractedParams.location}${extractedParams.state ? `, ${extractedParams.state}` : ''} that match your criteria. You can view them in the panel on the right.`,
+            role: 'assistant',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, searchResponseMessage]);
+        }
+      }
+      
       // Only perform a search if explicitly requested
       if (isSearchCommand && hasAllParams) {
         console.log("ReAct - Acting: Performing apartment search based on explicit request");
         // All parameters are available and search was requested, let's search
         const apartments = searchApartments({
           location: updatedLocation,
+          state: updatedState,
           bedrooms: updatedBedrooms,
           budget: updatedBudget
         });
@@ -272,7 +262,8 @@ export default function ChatController() {
         if (apartments.length > 0) {
           console.log(`ReAct - Acting: Found ${apartments.length} matching apartments, generating results`);
           // Prepare apartment results to include in the message to the AI
-          let apartmentResults = `Based on your criteria (${updatedBedrooms === 0 ? 'Studio' : `${updatedBedrooms} bedroom`} in ${updatedLocation} with budget $${updatedBudget}), I found ${apartments.length} apartments:\n\n`;
+          const locationDisplay = updatedState ? `${updatedLocation}, ${updatedState}` : updatedLocation;
+          let apartmentResults = `Based on your criteria (${updatedBedrooms === 0 ? 'Studio' : `${updatedBedrooms} bedroom`} in ${locationDisplay} with budget $${updatedBudget}), I found ${apartments.length} apartments:\n\n`;
           
           apartments.forEach((apt, index) => {
             apartmentResults += `${index + 1}. ${apt.title} - ${apt.location} - ${apt.bedrooms === 0 ? 'Studio' : `${apt.bedrooms} bedroom`} - $${apt.rent}/month - ${apt.description}\n`;
@@ -307,7 +298,7 @@ export default function ChatController() {
             content
           });
           
-          let systemMessage = `The user is looking for ${updatedBedrooms === 0 ? 'a studio' : `a ${updatedBedrooms} bedroom apartment`} in ${updatedLocation} with a budget of $${updatedBudget}, but no matching apartments were found.`;
+          let systemMessage = `The user is looking for ${updatedBedrooms === 0 ? 'a studio' : `a ${updatedBedrooms} bedroom apartment`} in ${updatedLocation}, ${updatedState} with a budget of $${updatedBudget}, but no matching apartments were found.`;
           
           // Add Zillow URL if available
           if (zillowUrl) {
@@ -378,7 +369,7 @@ export default function ChatController() {
         let contextForAI = "The user has provided some apartment search parameters. ";
         
         if (updatedLocation) {
-          contextForAI += `Location: ${updatedLocation}. `;
+          contextForAI += `Location: ${updatedLocation}, ${updatedState}. `;
         }
         
         if (updatedBedrooms !== undefined) {
@@ -429,100 +420,44 @@ export default function ChatController() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <div className="p-4 bg-neutral-100 dark:bg-neutral-800 border-b flex justify-between items-center">
-        <h1 className="text-xl font-bold">JetRent - Apartment Finder</h1>
-      </div>
-      
-      <div className="flex h-[calc(100vh-132px)]">
-        {/* Chat area */}
+    <div className="flex h-screen">
+      <div className={`flex-1 flex flex-col h-full overflow-hidden ${showPropertyList ? 'md:border-r' : ''}`}>
         <div className="flex-1 overflow-y-auto p-4">
-          <div className="max-w-3xl mx-auto">
-            {messages.map((message) => (
-              <Message key={message.id} message={message} />
-            ))}
-            
-            {isLoading && (
-              <div className="flex justify-start mb-4">
-                <Card className="p-3 bg-neutral-100 dark:bg-neutral-800">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 bg-neutral-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                </Card>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
-        
-        {/* Parameters panel */}
-        <div className="w-80 border-l p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-          <h2 className="text-lg font-semibold mb-4">Search Parameters</h2>
-          <ParameterDisplay 
-            params={extractedParams} 
-            title="Latest Extracted Parameters"
-            visible={showParameters}
-          />
-          
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold mb-2">Current Search Criteria</h3>
-            <ParameterDisplay 
-              params={{
-                location: searchState.location,
-                bedrooms: searchState.bedrooms,
-                budget: searchState.budget,
-                zillowUrl: searchState.zillowUrl,
-                missingParameters: !searchState.hasAllParameters ? 
-                  [
-                    !searchState.location ? 'location' : null,
-                    searchState.bedrooms === undefined ? 'bedrooms' : null,
-                    searchState.budget === undefined ? 'budget' : null
-                  ].filter(Boolean) as string[] : []
-              }}
-              title=""
-              visible={true}
-            />
-          </div>
-          
-          {searchState.searchPerformed && (
-            <div className="mt-4 p-2 bg-green-50 dark:bg-green-900/30 rounded border border-green-200 dark:border-green-800 text-sm">
-              <p className="text-green-700 dark:text-green-300">
-                <span className="font-semibold">✓ Search completed</span> with all required parameters.
-              </p>
+          {messages.map((message) => (
+            <Message key={message.id} message={message} />
+          ))}
+          {isLoading && (
+            <div className="flex items-center justify-center p-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-500"></div>
+              <span className="ml-2 text-gray-500">Thinking...</span>
             </div>
           )}
-          
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold mb-2">Debug Log</h3>
-            <div className="text-xs font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded h-40 overflow-y-auto">
-              <div className="text-gray-500 dark:text-gray-400">
-                {/* We'll keep this empty for now but could add real-time logs */}
-                <p>ReAct Agent initialized</p>
-                {extractedParams.location && <p>→ Extracted location: {extractedParams.location}</p>}
-                {extractedParams.bedrooms !== undefined && <p>→ Extracted bedrooms: {extractedParams.bedrooms}</p>}
-                {extractedParams.budget !== undefined && <p>→ Extracted budget: ${extractedParams.budget}</p>}
-                {extractedParams.isGreeting && <p>→ Detected greeting</p>}
-                {searchState.hasAllParameters ? 
-                  <p>→ All parameters collected</p> : 
-                  <p>→ Missing parameters: {
-                    [
-                      !searchState.location ? 'location' : null,
-                      searchState.bedrooms === undefined ? 'bedrooms' : null,
-                      searchState.budget === undefined ? 'budget' : null
-                    ].filter(Boolean).join(', ')
-                  }</p>
-                }
-                {searchState.searchPerformed && <p>→ Search performed</p>}
-              </div>
+          <div ref={messagesEndRef} />
+        </div>
+        
+        <div className="border-t border-gray-200 dark:border-gray-800 p-4">
+          {/* Toggle button for property panel */}
+          {extractedParams.location && (
+            <div className="flex justify-end mb-2">
+              <button 
+                onClick={() => setShowPropertyList(prev => !prev)}
+                className="text-sm px-3 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/50 transition-colors duration-200"
+              >
+                {showPropertyList ? 'Hide Properties' : 'Show Properties'}
+              </button>
             </div>
-          </div>
+          )}
+          <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
         </div>
       </div>
       
-      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+      {/* Property List Panel */}
+      {showPropertyList && (
+        <PropertyList 
+          searchParams={extractedParams} 
+          isVisible={showPropertyList} 
+        />
+      )}
     </div>
   );
 } 

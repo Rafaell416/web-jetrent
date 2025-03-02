@@ -129,15 +129,23 @@ const mockApartments: Record<string, Array<{
 // Function to search apartments based on parameters
 export function searchApartments({
   location,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  state,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  zipcode,
   bedrooms,
   budget
 }: {
   location?: string;
+  state?: string;
+  zipcode?: string;
   bedrooms?: number;
   budget?: number;
 }) {
   // Default to empty array if location is not found
   if (!location) return [];
+  
+  // State and zipcode parameters are accepted for API consistency but not used in mock data search
   
   const locationKey = location.toLowerCase();
   let apartments = [];
