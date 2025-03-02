@@ -32,9 +32,15 @@ export default function ChatController() {
     zillowUrl?: string;
     hasAllParameters: boolean;
     searchPerformed: boolean;
-  }>({
-    hasAllParameters: false,
-    searchPerformed: false
+  }>(() => {
+    // Try to load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const savedState = localStorage.getItem('searchState');
+      return savedState 
+        ? JSON.parse(savedState) 
+        : { hasAllParameters: false, searchPerformed: false };
+    }
+    return { hasAllParameters: false, searchPerformed: false };
   });
   
   // New state to track the latest extracted parameters
@@ -46,10 +52,30 @@ export default function ChatController() {
     budget?: number;
     missingParameters?: string[];
     isGreeting?: boolean;
-  }>({});
+  }>(() => {
+    // Try to load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const savedParams = localStorage.getItem('extractedParams');
+      return savedParams ? JSON.parse(savedParams) : {};
+    }
+    return {};
+  });
   
   // New state to control the property list visibility
   const [showPropertyList, setShowPropertyList] = useState(false);
+  
+  // Add useEffect to load property list visibility from localStorage on component mount
+  useEffect(() => {
+    const savedVisibility = localStorage.getItem('propertyListVisible');
+    if (savedVisibility) {
+      setShowPropertyList(savedVisibility === 'true');
+    }
+  }, []);
+  
+  // Add useEffect to save property list visibility to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('propertyListVisible', showPropertyList.toString());
+  }, [showPropertyList]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -59,6 +85,19 @@ export default function ChatController() {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
+
+  // Add effect to save extractedParams to localStorage when it changes
+  useEffect(() => {
+    // Only save if we have some valid parameters (at least location)
+    if (extractedParams.location) {
+      localStorage.setItem('extractedParams', JSON.stringify(extractedParams));
+    }
+  }, [extractedParams]);
+
+  // Add effect to save searchState to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('searchState', JSON.stringify(searchState));
+  }, [searchState]);
 
   // Helper function to convert our MessageType to OpenAI message format
   const formatMessagesForOpenAI = (messagesToFormat: MessageType[]) => {
@@ -419,6 +458,13 @@ export default function ChatController() {
     }
   };
 
+  // Function to toggle property list visibility
+  const togglePropertyList = () => {
+    const newVisibility = !showPropertyList;
+    setShowPropertyList(newVisibility);
+    localStorage.setItem('propertyListVisible', newVisibility.toString());
+  };
+
   return (
     <div className="flex h-screen">
       <div className={`flex-1 flex flex-col h-full overflow-hidden ${showPropertyList ? 'md:border-r' : ''}`}>
@@ -440,7 +486,7 @@ export default function ChatController() {
           {extractedParams.location && (
             <div className="flex justify-end mb-2">
               <button 
-                onClick={() => setShowPropertyList(prev => !prev)}
+                onClick={togglePropertyList}
                 className="text-sm px-3 py-1 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/50 transition-colors duration-200"
               >
                 {showPropertyList ? 'Hide Properties' : 'Show Properties'}

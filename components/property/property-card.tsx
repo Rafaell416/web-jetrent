@@ -3,12 +3,35 @@
 import React from 'react';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { ZillowProperty } from '@/lib/zillow-scraper';
+import { useBookmarkStore } from '@/lib/store/bookmarks';
+import { Bookmark, BookmarkCheck } from 'lucide-react';
 
 interface PropertyCardProps {
   property: ZillowProperty;
 }
 
 export default function PropertyCard({ property }: PropertyCardProps) {
+  // Get bookmark functions from the store
+  const { addBookmark, removeBookmark, isBookmarked } = useBookmarkStore();
+  
+  // Get property ID for bookmark operations
+  const propertyId = property.plid || property.zpid || '';
+  
+  // Check if this property is bookmarked
+  const bookmarked = isBookmarked(propertyId);
+  
+  // Toggle bookmark status
+  const toggleBookmark = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (bookmarked) {
+      removeBookmark(propertyId);
+    } else {
+      addBookmark(property);
+    }
+  };
+  
   // Format min beds for display
   const bedsDisplay = property.minBeds === 0 ? 'Studio' : `${property.minBeds} bed`;
   
@@ -53,6 +76,19 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             3D Tour
           </div>
         )}
+        
+        {/* Bookmark button */}
+        <button 
+          onClick={toggleBookmark}
+          className="absolute bottom-2 right-2 bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          aria-label={bookmarked ? "Remove from bookmarks" : "Add to bookmarks"}
+        >
+          {bookmarked ? (
+            <BookmarkCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          ) : (
+            <Bookmark className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+          )}
+        </button>
       </div>
       
       <CardContent className="flex-grow p-4">

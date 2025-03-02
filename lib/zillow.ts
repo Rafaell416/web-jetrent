@@ -85,12 +85,12 @@ export function generateZillowUrl(
   }
   
   // Explicitly check for zipcode and add it to the path
-  if (zipcode && zipcode.trim() !== '') {
-    locationPath += `-${zipcode}`;
-    console.log(`Adding zipcode ${zipcode} to URL path: ${locationPath}`);
-  } else {
-    console.log(`No zipcode provided for URL path: ${locationPath}`);
-  }
+  // if (zipcode && zipcode.trim() !== '') {
+  //   locationPath += `-${zipcode}`;
+  //   console.log(`Adding zipcode ${zipcode} to URL path: ${locationPath}`);
+  // } else {
+  //   console.log(`No zipcode provided for URL path: ${locationPath}`);
+  // }
   
   // Base URL components
   const baseUrl = 'https://www.zillow.com';
@@ -104,10 +104,10 @@ export function generateZillowUrl(
   }
   
   // Explicitly check for zipcode and add it to the search term
-  if (zipcode && zipcode.trim() !== '') {
-    searchTerm += ` ${zipcode}`;
-    console.log(`Adding zipcode ${zipcode} to search term: ${searchTerm}`);
-  }
+  // if (zipcode && zipcode.trim() !== '') {
+  //   searchTerm += ` ${zipcode}`;
+  //   console.log(`Adding zipcode ${zipcode} to search term: ${searchTerm}`);
+  // }
   
   // Build the searchQueryState object
   const searchQueryState: ZillowSearchQueryState = {
