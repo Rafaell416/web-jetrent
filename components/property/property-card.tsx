@@ -5,6 +5,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { ZillowProperty } from '@/lib/zillow-scraper';
 import { useBookmarkStore } from '@/lib/store/bookmarks';
 import { Bookmark, BookmarkCheck } from 'lucide-react';
+import PropertyLabels from './property-labels';
 
 interface PropertyCardProps {
   property: ZillowProperty;
@@ -107,7 +108,10 @@ export default function PropertyCard({ property }: PropertyCardProps) {
         {buildingDisplay && (
           <div className="text-md font-semibold mb-1">{buildingDisplay}</div>
         )}
-        <div className="text-sm text-gray-600">{property.address}</div>
+        <div className="text-sm text-gray-600 mb-1">{property.address}</div>
+        
+        {/* Property labels (only show if bookmarked) */}
+        {bookmarked && <PropertyLabels propertyId={propertyId} compact={true} />}
       </CardContent>
       
       <CardFooter className="border-t p-3 bg-gray-50 dark:bg-gray-900">
