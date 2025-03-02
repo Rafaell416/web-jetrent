@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { ZillowProperty } from '@/lib/zillow-scraper';
 import { useBookmarkStore } from '@/lib/store/bookmarks';
@@ -52,6 +52,26 @@ export default function PropertyCard({ property }: PropertyCardProps) {
   } else if (property.zpid) {
     zillowUrl = `https://www.zillow.com/homedetails/${property.zpid}_zpid/`;
   }
+
+  // Determine site display consistently based on property ID
+  const siteDisplay = useMemo(() => {
+    const sites = [
+      { name: 'View on Zillow', color: 'text-blue-600 dark:text-blue-400' },
+      { name: 'View on Apartments.com', color: 'text-green-600 dark:text-green-400' },
+      { name: 'View on Rent.com', color: 'text-purple-600 dark:text-purple-400' }
+    ];
+    
+    // Use property ID to generate a consistent index
+    // This will ensure the same property always shows the same site
+    const id = propertyId || '';
+    let sum = 0;
+    for (let i = 0; i < id.length; i++) {
+      sum += id.charCodeAt(i);
+    }
+    const index = sum % sites.length;
+    
+    return sites[index];
+  }, [propertyId]);
 
   return (
     <Card className="overflow-hidden h-full flex flex-col">
@@ -122,15 +142,7 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             rel="noopener noreferrer"
             className="text-sm text-blue-600 dark:text-blue-400 hover:underline w-full text-center"
           >
-            {(() => {
-              const sites = [
-                { name: 'View on Zillow', color: 'text-blue-600 dark:text-blue-400' },
-                { name: 'View on Apartments.com', color: 'text-green-600 dark:text-green-400' },
-                { name: 'View on Rent.com', color: 'text-purple-600 dark:text-purple-400' }
-              ];
-              const randomSite = sites[Math.floor(Math.random() * sites.length)];
-              return <span className={randomSite.color}>{randomSite.name}</span>;
-            })()}
+            <span className={siteDisplay.color}>{siteDisplay.name}</span>
           </a>
         ) : (
           <span className="text-sm text-gray-500 w-full text-center">
